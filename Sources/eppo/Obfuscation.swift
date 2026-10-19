@@ -1,24 +1,25 @@
 import Foundation
-import CommonCrypto
+import CryptoKit
 
-func getMD5Hex(_ value: String) -> String {
-    let length = Int(CC_MD5_DIGEST_LENGTH)
-    let messageData = value.data(using: .utf8)!
-    var digestData = Data(count: length)
+private let hexTable: StaticString = "0123456789abcdef"
 
-    _ = digestData.withUnsafeMutableBytes { digestBytes -> UInt8 in
-        messageData.withUnsafeBytes { messageBytes -> UInt8 in
-            if let messageBytesBaseAddress = messageBytes.baseAddress,
-               let digestBytesBlindMemory = digestBytes.bindMemory(to: UInt8.self).baseAddress {
-                let messageLength = CC_LONG(messageData.count)
-                // This warning can be ignore since we are deliberately using md5 to obfuscate the value.
-                CC_MD5(messageBytesBaseAddress, messageLength, digestBytesBlindMemory)
-            }
-            return 0
+func getMD5Hex(_ value: String, salt: String = "") -> String {
+    let saltedValue = salt + value
+    let messageData = Data(saltedValue.utf8)
+    let digest = Insecure.MD5.hash(data: messageData)
+
+    // MD5 produces 16 bytes = 32 hex characters
+    var result = ""
+    result.reserveCapacity(32)
+
+    hexTable.withUTF8Buffer { hexDigits in
+        for byte in digest {
+            result.unicodeScalars.append(UnicodeScalar(hexDigits[Int(byte >> 4)]))
+            result.unicodeScalars.append(UnicodeScalar(hexDigits[Int(byte & 0x0F)]))
         }
     }
 
-    return digestData.map { String(format: "%02hhx", $0) }.joined()
+    return result
 }
 
 func base64Encode(_ value: String) -> String {
@@ -49,7 +50,7 @@ func base64DecodeOrThrow(_ value: String) throws -> String {
 enum Base64DecodeError: Error, LocalizedError {
     case invalidBase64(String)
     case invalidUTF8(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .invalidBase64(let value):
@@ -60,7 +61,36 @@ enum Base64DecodeError: Error, LocalizedError {
     }
 }
 
-// Define the date formatter at a scope accessible by your function
+/// Decodes a base64-encoded variation value and converts it to the appropriate EppoValue type.
+/// Used by precomputed flags (PrecomputedConfiguration).
+func decodeVariationValue(encodedString: String, variationType: VariationType) throws -> EppoValue {
+    let decodedString = try base64DecodeOrThrow(encodedString)
+    return convertDecodedStringToEppoValue(decodedString, isBoolean: variationType == .boolean, isNumeric: variationType == .integer || variationType == .numeric)
+}
+
+/// Decodes a base64-encoded variation value and converts it to the appropriate EppoValue type.
+/// Used by local evaluation (FlagEvaluation).
+func decodeVariationValue(encodedString: String, variationType: UFC_VariationType) throws -> EppoValue {
+    let decodedString = try base64DecodeOrThrow(encodedString)
+    return convertDecodedStringToEppoValue(decodedString, isBoolean: variationType == .boolean, isNumeric: variationType == .integer || variationType == .numeric)
+}
+
+/// Internal helper to convert a decoded string to the appropriate EppoValue type.
+private func convertDecodedStringToEppoValue(_ decodedString: String, isBoolean: Bool, isNumeric: Bool) -> EppoValue {
+    if isBoolean {
+        return EppoValue(value: "true" == decodedString.lowercased())
+    } else if isNumeric {
+        if let doubleValue = Double(decodedString) {
+            return EppoValue(value: doubleValue)
+        }
+        return EppoValue.nullValue()
+    } else {
+        // string or json
+        return EppoValue(value: decodedString)
+    }
+}
+
+
 let UTC_ISO_DATE_FORMAT: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ" // Includes milliseconds

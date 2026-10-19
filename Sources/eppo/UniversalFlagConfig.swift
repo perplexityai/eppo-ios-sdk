@@ -89,21 +89,23 @@ enum UFC_RuleConditionOperator: String, Codable, CaseIterable {
     case notOneOf = "NOT_ONE_OF"
     case isNull = "IS_NULL"
 
+    /// Obfuscated configurations store each operator as the MD5 hex of its raw value. Hashing
+    /// every case for every condition took most of the time spent decoding a configuration.
+    private static let operatorsByEncodedValue: [String: UFC_RuleConditionOperator] = Dictionary(
+        uniqueKeysWithValues: allCases.flatMap { [($0.rawValue, $0), (getMD5Hex($0.rawValue), $0)] }
+    )
+
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
 
-        for type in UFC_RuleConditionOperator.allCases {
-            if type.rawValue == rawValue || getMD5Hex(type.rawValue) == rawValue {
-                self = type
-                return
-            }
+        guard let type = Self.operatorsByEncodedValue[rawValue] else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Cannot initialize UFC_RuleConditionOperator from invalid raw value \(rawValue)"
+            )
         }
-
-        throw DecodingError.dataCorruptedError(
-            in: container,
-            debugDescription: "Cannot initialize UFC_RuleConditionOperator from invalid raw value \(rawValue)"
-        )
+        self = type
     }
 }
 

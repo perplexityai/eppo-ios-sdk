@@ -25,6 +25,20 @@ on:
         required: false
 
 jobs:
+  lint:
+    runs-on: macos-latest
+    steps:
+      # This repository, not Eppo-exp/eppo-ios-sdk, so pull requests test their own code.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.sdk_branch }}
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: make lint
+
   build:
     runs-on: macos-latest
     steps:
@@ -34,10 +48,10 @@ jobs:
           echo "Test Data: sdk-test-data@${TEST_DATA_BRANCH_NAME}"
           echo "SDK Branch: eppo-ios-sdk@${SDK_BRANCH_NAME}"
 
-      - uses: actions/checkout@v3
+      # This repository, not Eppo-exp/eppo-ios-sdk, so pull requests test their own code.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          repository: Eppo-exp/eppo-ios-sdk
-          ref: ${{ env.SDK_BRANCH_NAME}}
+          ref: ${{ inputs.sdk_branch }}
 
       - name: Build
         run: make build

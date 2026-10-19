@@ -17,6 +17,13 @@ class Compare {
 public class FlagEvaluator {
     let sharder: Sharder
 
+    /// Obfuscated conditions name each attribute by the MD5 hex of its name. Apps pass the same
+    /// names to every evaluation, and hashing them for every condition took most of the time spent
+    /// evaluating a flag.
+    private var attributeNameHashes: [String: String] = [:]
+    private let attributeNameHashesLock = NSLock()
+    private static let maximumCachedAttributeNames = 1_000
+
     init(sharder: Sharder) {
         self.sharder = sharder
     }
@@ -372,6 +379,19 @@ public class FlagEvaluator {
         return salt + "-" + subjectKey
     }
 
+    private func attributeNameHash(_ name: String) -> String {
+        attributeNameHashesLock.withLock {
+            if let hash = attributeNameHashes[name] {
+                return hash
+            }
+            let hash = getMD5Hex(name)
+            if attributeNameHashes.count < Self.maximumCachedAttributeNames {
+                attributeNameHashes[name] = hash
+            }
+            return hash
+        }
+    }
+
     private func evaluateCondition(
         subjectAttributes: SubjectAttributes,
         condition: UFC_TargetingRuleCondition,
@@ -385,7 +405,7 @@ public class FlagEvaluator {
         // First check if the attribute exists in subject attributes
         if isConfigObfuscated {
             for (key, value) in subjectAttributes {
-                if getMD5Hex(key) == attributeKey {
+                if attributeNameHash(key) == attributeKey {
                     attributeValue = value
                     break
                 }
@@ -396,7 +416,7 @@ public class FlagEvaluator {
         
         // If not found in attributes and the attribute is "id", use the subject key
         if attributeValue == nil {
-            let idKey = isConfigObfuscated ? getMD5Hex("id") : "id"
+            let idKey = isConfigObfuscated ? attributeNameHash("id") : "id"
             if attributeKey == idKey {
                 attributeValue = EppoValue.valueOf(subjectKey)
             }
